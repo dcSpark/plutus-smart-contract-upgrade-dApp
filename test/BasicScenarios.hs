@@ -4,11 +4,11 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE NoImplicitPrelude #-}
 
-module BasicScenarios
-  ( useCaseTests,
-  )
-where
+module BasicScenarios where
+
+--useCaseTests,
 
 import Control.Lens
 import Control.Monad hiding (fmap)
@@ -16,76 +16,73 @@ import Endpoints
 import Ledger.Ada as Ada
 import Ledger.Index (ValidationError (ScriptFailure))
 import Ledger.Scripts (ScriptError (EvaluationError))
-import MaliciousEndpoints as ME
+-- import MaliciousEndpoints as ME
 import Offchain
 import Plutus.Contract.Test
 import Plutus.Trace.Emulator qualified as Trace
 import PlutusTx.Prelude hiding (Semigroup (..), unless)
 import Test.Tasty
-import Wallet.Emulator.Wallet
-import Prelude ((<>))
 
-useCaseTests :: TestTree
-useCaseTests =
+-- import Wallet.Emulator.Wallet
+
+-- import Prelude ((<>))
+
+normalTests :: TestTree
+normalTests =
   let options = defaultCheckOptions & emulatorConfig .~ emCfg
    in testGroup
-        "Voting scenarios"
+        "Normal contract use"
         [ checkPredicateOptions
             options
-            "Voted wallet with quorum should get content of treasury"
-            (assertNoFailedTransactions .&&. walletFundsChange w7 (Ada.lovelaceValueOf 1_000_000_000 <> specialTokenValue))
-            voteWithQuorum,
+            "Collect prize"
+            (assertNoFailedTransactions .&&. walletFundsChange w7 (Ada.lovelaceValueOf 1_000_000_000))
+            collectPrize,
           checkPredicateOptions
             options
-            "Voted wallets with no quorum should not get content of treasury"
-            (assertFailedTransaction (\_ err _ -> case err of ScriptFailure (EvaluationError [" **** Not enough votes", "PT5"] _) -> True; _ -> False))
-            voteWithNoQuorum
+            "Try prize with invalid response"
+            (assertFailedTransaction (\_ err _ -> case err of ScriptFailure (EvaluationError ["", "PT5"] _) -> True; _ -> False))
+            collectPrizeInvalid,
+          checkPredicateOptions
+            options
+            "Migrate contract"
+            (assertNoFailedTransactions .&&. walletFundsChange w7 (Ada.lovelaceValueOf 1_000_000_000))
+            migrateCurrentContract
         ]
 
-voteWithQuorum :: Trace.EmulatorTrace ()
-voteWithQuorum = do
-  h1 <- Trace.activateContractWallet w1 $ contract
-  h2 <- Trace.activateContractWallet w2 $ contract
-  h3 <- Trace.activateContractWallet w3 $ contract
-  h4 <- Trace.activateContractWallet w4 $ contract
-  h5 <- Trace.activateContractWallet w5 $ contract
-  h6 <- Trace.activateContractWallet w6 $ contract
+collectPrize :: Trace.EmulatorTrace ()
+collectPrize = do
+  h1 <- Trace.activateContractWallet w1 contract
+  h2 <- Trace.activateContractWallet w2 contract
   void $ Trace.waitNSlots 1
-  Trace.callEndpoint @"1-setup treasury" h1 $ Ada.lovelaceValueOf 1_000_000_000 <> specialTokenValue
+  Trace.callEndpoint @"lock funds" h1 $ LockValueParams 16 $ Ada.lovelaceValueOf 1_000_000_000
   void $ Trace.waitNSlots 1
-  let voteParam = VoteAddressParams (mockWalletAddress w7) 1
-  Trace.callEndpoint @"2-vote address" h2 voteParam
-  void $ Trace.waitNSlots 1
-  Trace.callEndpoint @"2-vote address" h3 voteParam
-  void $ Trace.waitNSlots 1
-  Trace.callEndpoint @"2-vote address" h4 voteParam
-  void $ Trace.waitNSlots 1
-  Trace.callEndpoint @"2-vote address" h5 voteParam
-  void $ Trace.waitNSlots 1
-  Trace.callEndpoint @"3-collect" h6 ()
+  Trace.callEndpoint @"submit solution" h2 4
   void $ Trace.waitNSlots 1
 
-voteWithNoQuorum :: Trace.EmulatorTrace ()
-voteWithNoQuorum = do
-  let evilContract = ME.endpoints voteCfg
-  h1 <- Trace.activateContractWallet w1 $ contract
-  h2 <- Trace.activateContractWallet w2 $ contract
-  h3 <- Trace.activateContractWallet w3 $ contract
-  h4 <- Trace.activateContractWallet w4 $ contract
-  h5 <- Trace.activateContractWallet w5 $ contract
-  h6 <- Trace.activateContractWallet w6 $ evilContract
+collectPrizeInvalid :: Trace.EmulatorTrace ()
+collectPrizeInvalid = do
+  h1 <- Trace.activateContractWallet w1 contract
+  h2 <- Trace.activateContractWallet w2 contract
   void $ Trace.waitNSlots 1
-  Trace.callEndpoint @"1-setup treasury" h1 $ Ada.lovelaceValueOf 1_000_000_000 <> specialTokenValue
+  Trace.callEndpoint @"lock funds" h1 $ LockValueParams 16 $ Ada.lovelaceValueOf 1_000_000_000
   void $ Trace.waitNSlots 1
-  let voteParam1 = VoteAddressParams (mockWalletAddress w7) 1
-  let voteParam2 = VoteAddressParams (mockWalletAddress w8) 1
-  Trace.callEndpoint @"2-vote address" h2 voteParam1
+  Trace.callEndpoint @"submit solution" h2 5
   void $ Trace.waitNSlots 1
-  Trace.callEndpoint @"2-vote address" h3 voteParam1
+
+migrateCurrentContract :: Trace.EmulatorTrace ()
+migrateCurrentContract = do
+  h1 <- Trace.activateContractWallet w1 contract
   void $ Trace.waitNSlots 1
-  Trace.callEndpoint @"2-vote address" h4 voteParam2
+  Trace.callEndpoint @"lock funds" h1 $ LockValueParams 16 $ Ada.lovelaceValueOf 1_000_000_000
   void $ Trace.waitNSlots 1
-  Trace.callEndpoint @"2-vote address" h5 voteParam2
-  void $ Trace.waitNSlots 1
-  Trace.callEndpoint @"collect-no-q" h6 ()
-  void $ Trace.waitNSlots 1
+
+-- let
+--   newValue' = Ada.lovelaceValueOf 1_000_000_000
+--   newDatum' = ""
+--   newScriptHash' =
+--   migrationData = MigrateContractParams newScriptHash' newDatum' newValue' signatures
+-- Trace.callEndpoint @"migrate contract" h2
+-- TODO
+-- build new token
+-- sign it
+--

@@ -42,7 +42,6 @@ library
                      , plutus-tx
                      , plutus-tx-plugin
                      , text
-                     , playground-common
                      , lens
 
   default-language:   Haskell2010

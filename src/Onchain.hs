@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -48,6 +50,7 @@ import PlutusTx.Prelude
     map,
     mapMaybe,
     nub,
+    sha2_256,
     traceError,
     traceIfFalse,
     verifySignature,
@@ -104,29 +107,54 @@ data MigrationDatum = MigrationDatum
 PlutusTx.makeLift ''MigrationDatum
 PlutusTx.makeIsDataIndexed ''MigrationDatum [('MigrationDatum, 0)]
 
--- Sample
-
 -- ONCHAIN VALIDATORS
 
-type DatumType' = Integer
+newtype HashedString = HashedString BuiltinByteString deriving newtype (PlutusTx.ToData, PlutusTx.FromData, PlutusTx.UnsafeFromData, Prelude.Eq, Prelude.Show, FromJSON, ToJSON)
 
-type RedeemerType' = Integer
+PlutusTx.makeLift ''HashedString
 
-sampleValidatorScript :: Integer -> Integer -> ScriptContext -> Bool
-sampleValidatorScript datum redeemer _ = redeemer * redeemer == datum
+newtype ClearString = ClearString BuiltinByteString deriving newtype (PlutusTx.ToData, PlutusTx.FromData, PlutusTx.UnsafeFromData, Prelude.Eq)
+
+PlutusTx.makeLift ''ClearString
+
+data Game
+
+instance ValidatorTypes Game where
+  type RedeemerType Game = ClearString
+  type DatumType Game = HashedString
+
+gameInstance :: TypedValidator Game
+gameInstance =
+  mkTypedValidator @Game
+    $$(PlutusTx.compile [||validateGuess||])
+    $$(PlutusTx.compile [||wrap||])
+  where
+    wrap = wrapValidator @HashedString @ClearString
+
+-- | The validation function (Datum -> Redeemer -> ScriptContext -> Bool)
+validateGuess :: HashedString -> ClearString -> ScriptContext -> Bool
+validateGuess hs cs _ = isGoodGuess hs cs
+
+isGoodGuess :: HashedString -> ClearString -> Bool
+isGoodGuess (HashedString actual) (ClearString guess') = actual == sha2_256 guess'
+
+gameScriptHash :: ValidatorHash
+gameScriptHash = validatorHash $ validatorScript $ gameInstance
+
+data MathReward
+
+instance ValidatorTypes MathReward where
+  type RedeemerType MathReward = Integer
+  type DatumType MathReward = Integer
+
+mathRewardValidatorScript :: Integer -> Integer -> ScriptContext -> Bool
+mathRewardValidatorScript datum redeemer _ = redeemer * redeemer == datum
 
 -- Upgrade script
 
-data Upgrade
-
-instance ValidatorTypes Upgrade where
-  type RedeemerType Upgrade = RedeemerType'
-  type DatumType Upgrade = DatumType'
-
-{-# INLINEABLE upgradeScript #-}
-upgradeScript :: UpgradeConfig -> DatumType' -> RedeemerType' -> ScriptContext -> Bool
--- upgradeScript :: (ValidatorType a) -> UpgradeConfig -> TypedValidator (Upgrade a)
-upgradeScript UpgradeConfig {controlAsset, treasury} datum redeemer ctx@ScriptContext {scriptContextTxInfo = txInfo} =
+{-# INLINEABLE upgradeMathScript #-}
+upgradeMathScript :: UpgradeConfig -> DatumType MathReward -> RedeemerType MathReward -> ScriptContext -> Bool
+upgradeMathScript UpgradeConfig {controlAsset, treasury} datum redeemer ctx@ScriptContext {scriptContextTxInfo = txInfo} =
   let controlTokenPayToTreasury = Value.assetClassValueOf (Validation.valueLockedBy txInfo treasury) controlAsset > 0
    in if controlTokenPayToTreasury
         then
@@ -134,21 +162,21 @@ upgradeScript UpgradeConfig {controlAsset, treasury} datum redeemer ctx@ScriptCo
               noValueCurrentContract = Value.isZero $ Validation.valueLockedBy txInfo $ Validation.ownHash ctx
            in noValueCurrentContract
         else -- regular spending path, delegate to script
-          sampleValidatorScript datum redeemer ctx
+          mathRewardValidatorScript datum redeemer ctx
 
-upgradeScriptInstance :: UpgradeConfig -> TypedValidator Upgrade
-upgradeScriptInstance config =
+upgradeMathScriptInstance :: UpgradeConfig -> TypedValidator MathReward
+upgradeMathScriptInstance config =
   mkTypedValidator
-    ($$(PlutusTx.compile [||upgradeScript||]) `PlutusTx.applyCode` PlutusTx.liftCode config)
+    ($$(PlutusTx.compile [||upgradeMathScript||]) `PlutusTx.applyCode` PlutusTx.liftCode config)
     $$(PlutusTx.compile [||wrap||])
   where
     wrap = wrapValidator
 
-upgradeScriptHash :: UpgradeConfig -> ValidatorHash
-upgradeScriptHash config = validatorHash $ validatorScript $ upgradeScriptInstance config
+upgradeMathScriptHash :: UpgradeConfig -> ValidatorHash
+upgradeMathScriptHash config = validatorHash $ validatorScript $ upgradeMathScriptInstance config
 
-upgradeScriptAddress :: UpgradeConfig -> Address
-upgradeScriptAddress config = Ledger.scriptAddress (validatorScript $ upgradeScriptInstance config)
+upgradeMathScriptAddress :: UpgradeConfig -> Address
+upgradeMathScriptAddress config = Ledger.scriptAddress (validatorScript $ upgradeMathScriptInstance config)
 
 -- Treasury script
 data Treasury
