@@ -8,24 +8,20 @@
 
 module BasicScenarios where
 
---useCaseTests,
-
 import Control.Lens
 import Control.Monad hiding (fmap)
 import Endpoints
+import Ledger (Datum (..), datumHash)
 import Ledger.Ada as Ada
 import Ledger.Index (ValidationError (ScriptFailure))
 import Ledger.Scripts (ScriptError (EvaluationError))
--- import MaliciousEndpoints as ME
 import Offchain
+import Onchain
 import Plutus.Contract.Test
 import Plutus.Trace.Emulator qualified as Trace
+import Plutus.V1.Ledger.Api (ToData (toBuiltinData))
 import PlutusTx.Prelude hiding (Semigroup (..), unless)
 import Test.Tasty
-
--- import Wallet.Emulator.Wallet
-
--- import Prelude ((<>))
 
 normalTests :: TestTree
 normalTests =
@@ -35,17 +31,17 @@ normalTests =
         [ checkPredicateOptions
             options
             "Collect prize"
-            (assertNoFailedTransactions .&&. walletFundsChange w7 (Ada.lovelaceValueOf 1_000_000_000))
+            (assertNoFailedTransactions .&&. walletFundsChange w2 (Ada.lovelaceValueOf 1_000_000_000))
             collectPrize,
           checkPredicateOptions
             options
             "Try prize with invalid response"
-            (assertFailedTransaction (\_ err _ -> case err of ScriptFailure (EvaluationError ["", "PT5"] _) -> True; _ -> False))
+            (assertFailedTransaction (\_ err _ -> case err of ScriptFailure (EvaluationError ["PT5"] _) -> True; _ -> False))
             collectPrizeInvalid,
           checkPredicateOptions
             options
             "Migrate contract"
-            (assertNoFailedTransactions .&&. walletFundsChange w7 (Ada.lovelaceValueOf 1_000_000_000))
+            assertNoFailedTransactions
             migrateCurrentContract
         ]
 
@@ -75,14 +71,13 @@ migrateCurrentContract = do
   void $ Trace.waitNSlots 1
   Trace.callEndpoint @"lock funds" h1 $ LockValueParams 16 $ Ada.lovelaceValueOf 1_000_000_000
   void $ Trace.waitNSlots 1
+  let newValue' = Ada.lovelaceValueOf 1_000_000_000
+      newDatum' = hashString "secret"
+      currentScriptHash = upgradeMathScriptHash upgradeConfig
+      newScriptHash' = gameScriptHash
+      newDatumHash = datumHash $ Datum $ toBuiltinData newDatum'
+      newMigrationDatum = MigrationDatum currentScriptHash newScriptHash' newValue' newDatumHash
+      migrationData = MigrateContractParams newDatum' newValue' $ signDatumHash newMigrationDatum
+  Trace.callEndpoint @"migrate contract" h1 migrationData
 
--- let
---   newValue' = Ada.lovelaceValueOf 1_000_000_000
---   newDatum' = ""
---   newScriptHash' =
---   migrationData = MigrateContractParams newScriptHash' newDatum' newValue' signatures
--- Trace.callEndpoint @"migrate contract" h2
--- TODO
--- build new token
--- sign it
 --

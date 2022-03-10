@@ -5,7 +5,7 @@ module Main
   )
 where
 
--- import BasicScenarios
+import BasicScenarios
 import Endpoints
 import Test.Tasty
 import Test.Tasty.Hedgehog (HedgehogTestLimit (..))
@@ -24,6 +24,6 @@ useCaseTests' =
   localOption limit $
     testGroup
       "use cases"
-      [ Endpoints.endpointTests --,
-      -- BasicScenarios.useCaseTests
+      [ Endpoints.endpointTests,
+        BasicScenarios.normalTests
       ]

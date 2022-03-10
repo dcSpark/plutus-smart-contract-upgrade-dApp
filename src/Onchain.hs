@@ -139,7 +139,7 @@ isGoodGuess :: HashedString -> ClearString -> Bool
 isGoodGuess (HashedString actual) (ClearString guess') = actual == sha2_256 guess'
 
 gameScriptHash :: ValidatorHash
-gameScriptHash = validatorHash $ validatorScript $ gameInstance
+gameScriptHash = validatorHash $ validatorScript gameInstance
 
 data MathReward
 
