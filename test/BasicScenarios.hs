@@ -20,6 +20,7 @@ import Onchain
 import Plutus.Contract.Test
 import Plutus.Trace.Emulator qualified as Trace
 import Plutus.V1.Ledger.Api (ToData (toBuiltinData))
+import PlutusTx.Prelude ((<>))
 import PlutusTx.Prelude hiding (Semigroup (..), unless)
 import Test.Tasty
 
@@ -41,7 +42,11 @@ normalTests =
           checkPredicateOptions
             options
             "Migrate contract"
-            assertNoFailedTransactions
+            ( assertNoFailedTransactions
+                .&&. valueAtAddress
+                  gameScriptAddress
+                  (Ada.lovelaceValueOf 1_000_000_000 <> aTokenValue ==)
+            )
             migrateCurrentContract
         ]
 
@@ -69,9 +74,9 @@ migrateCurrentContract :: Trace.EmulatorTrace ()
 migrateCurrentContract = do
   h1 <- Trace.activateContractWallet w1 contract
   void $ Trace.waitNSlots 1
-  Trace.callEndpoint @"lock funds" h1 $ LockValueParams 16 $ Ada.lovelaceValueOf 1_000_000_000
+  Trace.callEndpoint @"lock funds" h1 $ LockValueParams 16 $ Ada.lovelaceValueOf 1_000_000_000 <> aTokenValue
   void $ Trace.waitNSlots 1
-  let newValue' = Ada.lovelaceValueOf 1_000_000_000
+  let newValue' = Ada.lovelaceValueOf 1_000_000_000 <> aTokenValue
       newDatum' = hashString "secret"
       currentScriptHash = upgradeMathScriptHash upgradeConfig
       newScriptHash' = gameScriptHash

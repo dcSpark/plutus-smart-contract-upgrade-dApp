@@ -108,56 +108,5 @@ endpointTests =
                 .&&. endpointAvailable @"submit solution" contract tag
                 .&&. endpointAvailable @"migrate contract" contract tag
             )
-            $ void $ Trace.activateContractWallet w1 contract --,
-            -- checkPredicateOptions options "Build treasury" assertNoFailedTransactions buildTreasuryTrace,
-            -- checkPredicateOptions options "Single vote" assertNoFailedTransactions singleVoteTrace,
-            -- checkPredicateOptions options "Return vote" assertNoFailedTransactions returnVoteTrace,
-            -- checkPredicateOptions options "Tally votes" assertNoFailedTransactions tallyVotesTrace
+            $ void $ Trace.activateContractWallet w1 contract
         ]
-
--- buildTreasuryTrace :: Trace.EmulatorTrace ()
--- buildTreasuryTrace = do
---   h1 <- Trace.activateContractWallet w1 $ contract
---   void $ Trace.waitNSlots 1
---   Trace.callEndpoint @"1-setup treasury" h1 $ Ada.lovelaceValueOf 1_000_000_000 <> specialTokenValue
---   void $ Trace.waitNSlots 1
-
--- singleVoteTrace :: Trace.EmulatorTrace ()
--- singleVoteTrace = do
---   h1 <- Trace.activateContractWallet w1 $ contract
---   h2 <- Trace.activateContractWallet w2 $ contract
---   void $ Trace.waitNSlots 1
---   Trace.callEndpoint @"1-setup treasury" h1 $ Ada.lovelaceValueOf 1_000_000_000 <> specialTokenValue
---   void $ Trace.waitNSlots 1
---   let voteParam = VoteAddressParams (mockWalletAddress w5) 1
---   Trace.callEndpoint @"2-vote address" h2 voteParam
-
--- returnVoteTrace :: Trace.EmulatorTrace ()
--- returnVoteTrace = do
---   h1 <- Trace.activateContractWallet w1 $ contract
---   h2 <- Trace.activateContractWallet w2 $ contract
---   void $ Trace.waitNSlots 1
---   Trace.callEndpoint @"1-setup treasury" h1 $ Ada.lovelaceValueOf 1_000_000_000 <> specialTokenValue
---   void $ Trace.waitNSlots 1
---   let voteParam = VoteAddressParams (mockWalletAddress w5) 1
---   Trace.callEndpoint @"2-vote address" h2 voteParam
---   void $ Trace.waitNSlots 1
---   Trace.callEndpoint @"4-return vote" h2 ()
---   void $ Trace.waitNSlots 1
-
--- tallyVotesTrace :: Trace.EmulatorTrace ()
--- tallyVotesTrace = do
---   h1 <- Trace.activateContractWallet w1 $ contract
---   h2 <- Trace.activateContractWallet w2 $ contract
---   h3 <- Trace.activateContractWallet w3 $ contract
---   h4 <- Trace.activateContractWallet w4 $ contract
---   void $ Trace.waitNSlots 1
---   Trace.callEndpoint @"1-setup treasury" h1 $ Ada.lovelaceValueOf 1_000_000_000 <> specialTokenValue
---   void $ Trace.waitNSlots 1
---   let voteParam = VoteAddressParams (mockWalletAddress w5) 1
---   Trace.callEndpoint @"2-vote address" h2 voteParam
---   void $ Trace.waitNSlots 1
---   Trace.callEndpoint @"2-vote address" h3 voteParam
---   void $ Trace.waitNSlots 1
---   Trace.callEndpoint @"3-collect" h4 ()
---   void $ Trace.waitNSlots 1

@@ -6,12 +6,9 @@ module Offchain where
 
 import Control.Monad (forever, void)
 import Data.Aeson (FromJSON, ToJSON)
--- import Data.ByteString.Lazy.Char8 (ByteString)
-
 import Data.ByteString.Char8 qualified as C
 import Data.Semigroup
 import Data.Text qualified as T
-import GHC.Base (undefined)
 import Ledger
   ( Datum (..),
     DatumHash (..),
@@ -20,7 +17,7 @@ import Ledger
     datumHash,
   )
 import Ledger.Constraints
-import Ledger.Typed.Scripts (ValidatorTypes (..))
+import Ledger.Typed.Scripts (ValidatorTypes (..), validatorScript)
 import Ledger.Value qualified as Value
 import Onchain
 import Plutus.Contract
@@ -87,14 +84,14 @@ migrateContract treasuryCfg upgradeCfg (MigrateContractParams newDatum' newValue
         else do
           treasuryUtxo <- utxosAt (treasuryScriptAddress treasuryCfg)
           contractUtxo <- utxosAt (upgradeMathScriptAddress upgradeCfg)
-          let currentValueInContract = collectFromScript contractUtxo undefined
+          let currentValueInContract = collectFromScript contractUtxo 0
 
               collectTreasuryToken = collectFromScript treasuryUtxo signatures
               returnTreasuryToken = mustPayToTheScript newMigrationDatum treasuryTokenValue
-              migrateContractReq = mustPayToTheScript newDatum' newValue'
+              migrateContractReq = mustPayToOtherScript gameScriptHash (Datum $ toBuiltinData newDatum') newValue'
 
-              treasuryLookups = typedValidatorLookups (treasuryScriptInstance treasuryCfg)
-              migrationLookups = typedValidatorLookups gameInstance
+              treasuryLookups = typedValidatorLookups (treasuryScriptInstance treasuryCfg) <> unspentOutputs treasuryUtxo
+              migrationLookups = otherScript (validatorScript gameInstance) <> unspentOutputs contractUtxo <> typedValidatorLookups (upgradeMathScriptInstance upgradeCfg)
               treasuryConstraint = collectTreasuryToken <> returnTreasuryToken
               migrationConstraint = migrateContractReq <> currentValueInContract
               treasurySpend = SomeLookupsAndConstraints treasuryLookups treasuryConstraint

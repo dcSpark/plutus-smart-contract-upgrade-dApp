@@ -141,6 +141,9 @@ isGoodGuess (HashedString actual) (ClearString guess') = actual == sha2_256 gues
 gameScriptHash :: ValidatorHash
 gameScriptHash = validatorHash $ validatorScript gameInstance
 
+gameScriptAddress :: Address
+gameScriptAddress = Ledger.scriptAddress (validatorScript gameInstance)
+
 data MathReward
 
 instance ValidatorTypes MathReward where
