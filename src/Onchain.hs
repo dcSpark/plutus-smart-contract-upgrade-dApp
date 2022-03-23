@@ -206,11 +206,6 @@ ownNextDatumHash ctx = case getContinuingOutputs ctx of
     Just h -> h
   _ -> traceError "expected exactly one continuing output"
 
--- {-# INLINEABLE valueSpentBy #-}
--- -- | Get the total value of inputs spent by this transaction.
--- valueSpentBy :: TxInfo -> ValidatorHash -> Value
--- valueSpentBy = foldMap (txOutValue . txInInfoResolved) . txInfoInputs
-
 {-# INLINEABLE valueSpentBy #-}
 
 -- | Get the list of 'TxOut' outputs of the pending transaction at

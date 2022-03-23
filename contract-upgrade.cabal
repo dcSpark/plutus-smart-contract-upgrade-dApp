@@ -71,6 +71,7 @@ library
                  -Wincomplete-uni-patterns -Wincomplete-record-updates
                  -Wredundant-constraints -Widentities
                  -fobject-code -fno-ignore-interface-pragmas -fno-omit-interface-pragmas
+                 -fplugin-opt PlutusTx.Plugin:defer-errors
 
 test-suite          contract-upgrade-test
   type:             exitcode-stdio-1.0
@@ -140,3 +141,4 @@ test-suite          contract-upgrade-test
                       -fobject-code
                       -fno-ignore-interface-pragmas
                       -fno-omit-interface-pragmas
+                      -fplugin-opt PlutusTx.Plugin:defer-errors

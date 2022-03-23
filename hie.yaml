@@ -1,0 +1,6 @@
+cradle:
+  cabal:
+    - component: "lib:contract-upgrade"
+      path: "./src/"
+    - component: "test:contract-upgrade-test"
+      path: "./test/"
