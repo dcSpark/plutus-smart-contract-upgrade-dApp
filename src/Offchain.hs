@@ -7,24 +7,72 @@ module Offchain where
 import Control.Monad (forever, void)
 import Data.Aeson (FromJSON, ToJSON)
 import Data.ByteString.Char8 qualified as C
-import Data.Semigroup
+import Data.Semigroup (Semigroup ((<>)))
 import Data.Text qualified as T
 import Ledger
   ( Datum (..),
-    DatumHash (..),
     Signature (..),
     Value,
     datumHash,
   )
 import Ledger.Constraints
+  ( SomeLookupsAndConstraints (SomeLookupsAndConstraints),
+    adjustUnbalancedTx,
+    mustPayToOtherScript,
+    mustPayToTheScript,
+    otherScript,
+    typedValidatorLookups,
+    unspentOutputs,
+  )
 import Ledger.Typed.Scripts (ValidatorTypes (..), validatorScript)
 import Ledger.Value qualified as Value
 import Onchain
+  ( ClearString (..),
+    Game,
+    HashedString (..),
+    MathReward,
+    MigrationDatum (MigrationDatum),
+    Treasury,
+    TreasuryConfig (..),
+    UpgradeConfig,
+    gameInstance,
+    gameScriptHash,
+    treasuryScriptAddress,
+    treasuryScriptInstance,
+    upgradeMathScriptAddress,
+    upgradeMathScriptHash,
+    upgradeMathScriptInstance,
+    validateSignatures,
+  )
 import Plutus.Contract
+  ( Contract,
+    Endpoint,
+    Promise (awaitPromise),
+    collectFromScript,
+    endpoint,
+    handleError,
+    logError,
+    logInfo,
+    mkTxConstraints,
+    select,
+    submitTxConfirmed,
+    submitTxConstraintsSpending,
+    utxosAt,
+    type (.\/),
+  )
 import Plutus.V1.Ledger.Api (ToData (toBuiltinData))
 import PlutusPrelude (Generic)
-import PlutusTx.Prelude hiding ((<>))
-import Utils
+import PlutusTx.Prelude
+  ( Integer,
+    Maybe (Just, Nothing),
+    not,
+    sha2_256,
+    toBuiltin,
+    ($),
+    (.),
+    (>>=),
+  )
+import Utils (mkMultiValidatorTx)
 import Prelude qualified
 
 ---------------------------------------------
@@ -61,6 +109,14 @@ hashString = HashedString . sha2_256 . toBuiltin . C.pack
 clearString :: Prelude.String -> ClearString
 clearString = ClearString . toBuiltin . C.pack
 
+initTreasury :: TreasuryConfig -> Contract () MigrateSchema T.Text ()
+initTreasury config@TreasuryConfig {treasuryAsset} = do
+  let treasuryValue = Value.assetClassValue treasuryAsset 1
+      tx = mustPayToTheScript Nothing treasuryValue
+      lookup = typedValidatorLookups (treasuryScriptInstance config)
+  void $ mkTxConstraints @Treasury lookup tx >>= submitTxConfirmed . adjustUnbalancedTx
+  logInfo @Prelude.String "lock value"
+
 data MigrateContractParams = MigrateContractParams
   { newDatum :: DatumType Game,
     newValue :: Value,
@@ -76,8 +132,8 @@ migrateContract treasuryCfg upgradeCfg (MigrateContractParams newDatum' newValue
       currentScriptHash = upgradeMathScriptHash upgradeCfg
       newScriptHash = gameScriptHash
       newDatumHash = datumHash $ Datum $ toBuiltinData newDatum'
-      newMigrationDatum = MigrationDatum currentScriptHash newScriptHash newValue' newDatumHash
-      DatumHash migrationDatumHash = datumHash $ Datum $ toBuiltinData newMigrationDatum
+      newMigrationDatum = Just $ MigrationDatum currentScriptHash newScriptHash newValue' newDatumHash
+      migrationDatumHash = datumHash $ Datum $ toBuiltinData newMigrationDatum
       migrationSigned = validateSignatures authorizedPubKeys minSigRequired signatures migrationDatumHash
    in if not migrationSigned
         then logError @Prelude.String "Migration not signed"
@@ -102,13 +158,15 @@ type MigrateSchema =
   Endpoint "lock funds" LockValueParams
     .\/ Endpoint "submit solution" Integer
     .\/ Endpoint "migrate contract" MigrateContractParams
+    .\/ Endpoint "init treasury" ()
 
 endpoints :: (TreasuryConfig, UpgradeConfig) -> Contract () MigrateSchema T.Text ()
 endpoints (treasuryCfg, ugpradeCfg) =
   forever $
     handleError logError $
-      awaitPromise $ lockFunds' `select` useContract' `select` migrateContract'
+      awaitPromise $ lockFunds' `select` useContract' `select` migrateContract' `select` initTreasury'
   where
     lockFunds' = endpoint @"lock funds" $ lockFunds ugpradeCfg
     useContract' = endpoint @"submit solution" $ submitsolution ugpradeCfg
     migrateContract' = endpoint @"migrate contract" $ migrateContract treasuryCfg ugpradeCfg
+    initTreasury' = endpoint @"init treasury" $ \() -> initTreasury treasuryCfg

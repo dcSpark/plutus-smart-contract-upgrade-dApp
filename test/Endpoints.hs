@@ -5,38 +5,43 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Endpoints
-  ( endpointTests,
-    emCfg,
-    contract,
-    signDatumHash,
-    upgradeConfig,
-    treasuryConfig,
-    aTokenValue,
-  )
-where
+module Endpoints where
 
--- import Control.Lens
-import Control.Monad hiding (fmap)
+import Control.Monad (void)
 import Data.Default (Default (..))
 import Data.Map qualified as Map
 import Data.Text qualified as T
 import Ledger (AssetClass, CurrencySymbol, Datum (..), DatumHash (..), Passphrase, PaymentPrivateKey (unPaymentPrivateKey), PaymentPubKey (unPaymentPubKey), PubKey, Signature, TokenName, Value, datumHash)
-import Ledger.Ada as Ada
-import Ledger.CardanoWallet
+import Ledger.Ada as Ada (lovelaceValueOf)
+import Ledger.CardanoWallet (paymentPrivateKey)
 import Ledger.Crypto qualified as Crypto
 import Ledger.Value qualified as Value
-import Offchain as OC
+import MaliciousEndpoints as MC
+import Offchain as OC (MigrateSchema, endpoints)
 import Onchain
-import Plutus.Contract
+  ( MigrationDatum,
+    TreasuryConfig (TreasuryConfig),
+    UpgradeConfig (UpgradeConfig),
+    treasuryScriptHash,
+  )
+import Plutus.Contract (Contract)
 import Plutus.Contract.Test
+  ( Wallet,
+    checkPredicate,
+    endpointAvailable,
+    mockWalletPaymentPubKey,
+    w1,
+    w2,
+    w3,
+    w4,
+    w5,
+    (.&&.),
+  )
 import Plutus.Trace.Emulator qualified as Trace
-import PlutusTx
-import Test.Tasty
-import Utils
-import Wallet.Emulator.Wallet
-
--- import Wallet.Emulator.Wallet (mockWalletAddress)
+import PlutusTx (ToData (toBuiltinData))
+import Test.Tasty (TestTree, testGroup)
+import Utils (fromJust)
+import Wallet.Emulator.Wallet (walletToMockWallet)
 
 currency :: CurrencySymbol
 currency = Value.currencySymbol "Treasury"
@@ -74,12 +79,14 @@ privKeys = map (paymentPrivateKey . fromJust . walletToMockWallet) wallets
 passphrase :: Passphrase
 passphrase = ""
 
-signDatumHash :: MigrationDatum -> [Signature]
-signDatumHash d = map signMsg privKeys
+signDatumHash :: Maybe MigrationDatum -> PaymentPrivateKey -> Signature
+signDatumHash d privKey = Crypto.sign msgHash (unPaymentPrivateKey privKey) passphrase
   where
-    signMsg privKey = Crypto.sign msgHash (unPaymentPrivateKey privKey) passphrase
     datum' = Datum $ toBuiltinData d
     DatumHash msgHash = datumHash datum'
+
+allSignDatumHash :: Maybe MigrationDatum -> [Signature]
+allSignDatumHash d = map (signDatumHash d) privKeys
 
 emCfg :: Trace.EmulatorConfig
 emCfg = Trace.EmulatorConfig (Left $ Map.fromList ((w1, v <> migrationControlValue) : [(w, v) | w <- [w2, w3, w4, w5]])) def def
@@ -95,10 +102,12 @@ upgradeConfig = UpgradeConfig migrationControlAsset (treasuryScriptHash treasury
 contract :: Contract () MigrateSchema T.Text ()
 contract = OC.endpoints (treasuryConfig, upgradeConfig)
 
+contractMalicious :: Contract () MigrateMaliciousSchema T.Text ()
+contractMalicious = MC.endpoints (treasuryConfig, upgradeConfig)
+
 endpointTests :: TestTree
 endpointTests =
-  let -- options = defaultCheckOptions & emulatorConfig .~ emCfg
-      tag :: Trace.ContractInstanceTag
+  let tag :: Trace.ContractInstanceTag
       tag = "instance 1"
    in testGroup
         "Simple endpoint tests"
@@ -107,6 +116,7 @@ endpointTests =
             ( endpointAvailable @"lock funds" contract tag
                 .&&. endpointAvailable @"submit solution" contract tag
                 .&&. endpointAvailable @"migrate contract" contract tag
+                .&&. endpointAvailable @"init treasury" contract tag
             )
             $ void $ Trace.activateContractWallet w1 contract
         ]

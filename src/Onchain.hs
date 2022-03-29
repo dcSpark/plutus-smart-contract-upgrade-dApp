@@ -58,6 +58,7 @@ import PlutusTx.Prelude
     (&&),
     (.),
   )
+import Utils (fromJust)
 import Prelude (Show)
 import Prelude qualified
 
@@ -67,17 +68,17 @@ import Prelude qualified
 {-# INLINEABLE checkSignature #-}
 checkSignature ::
   -- | The hash of the message
-  BuiltinByteString ->
+  DatumHash ->
   -- | The public key of the signatory
   PubKey ->
   -- | The signed message
   Signature ->
   Bool
-checkSignature bsHash (PubKey (LedgerBytes pk)) (Signature sig) =
+checkSignature (DatumHash bsHash) (PubKey (LedgerBytes pk)) (Signature sig) =
   verifySignature pk bsHash sig
 
 {-# INLINEABLE validateSignatures #-}
-validateSignatures :: [PubKey] -> Integer -> [Signature] -> BuiltinByteString -> Bool
+validateSignatures :: [PubKey] -> Integer -> [Signature] -> DatumHash -> Bool
 validateSignatures pubKeys minSignatures sigs msgHash =
   let uniquePubKeys = nub pubKeys
       uniqueSigs = nub sigs
@@ -186,7 +187,7 @@ data Treasury
 
 instance ValidatorTypes Treasury where
   type RedeemerType Treasury = [Signature]
-  type DatumType Treasury = MigrationDatum
+  type DatumType Treasury = Maybe MigrationDatum
 
 data TreasuryConfig = TreasuryConfig
   { treasuryAsset :: !AssetClass,
@@ -208,7 +209,7 @@ ownNextDatumHash ctx = case getContinuingOutputs ctx of
 
 {-# INLINEABLE valueSpentBy #-}
 
--- | Get the list of 'TxOut' outputs of the pending transaction at
+-- | Get the input value of the pending transaction at
 --   a given script address.
 valueSpentBy :: TxInfo -> ValidatorHash -> Value
 valueSpentBy p h =
@@ -217,7 +218,7 @@ valueSpentBy p h =
    in fold $ mapMaybe (flt . txInInfoResolved) (txInfoInputs p)
 
 {-# INLINEABLE treasuryScript #-}
-treasuryScript :: TreasuryConfig -> MigrationDatum -> [Signature] -> ScriptContext -> Bool
+treasuryScript :: TreasuryConfig -> Maybe MigrationDatum -> [Signature] -> ScriptContext -> Bool
 treasuryScript TreasuryConfig {treasuryAsset, authorizedPubKeys, minSigRequired} _ sigs ctx@ScriptContext {scriptContextTxInfo = txInfo} =
   let outTreasuryDatumHash = ownNextDatumHash ctx
       outputDatum = case findDatum outTreasuryDatumHash txInfo of
@@ -226,20 +227,19 @@ treasuryScript TreasuryConfig {treasuryAsset, authorizedPubKeys, minSigRequired}
           Just ad' -> ad'
           Nothing -> traceError "error decoding data"
 
-      DatumHash msg = outTreasuryDatumHash
-      requiredSignatures = validateSignatures authorizedPubKeys minSigRequired sigs msg
-      MigrationDatum {originalScriptHash, newScriptHash, newValue, newDatumHash} = outputDatum
+      requiredSignatures = validateSignatures authorizedPubKeys minSigRequired sigs outTreasuryDatumHash
+      MigrationDatum {originalScriptHash, newScriptHash, newValue, newDatumHash} = fromJust outputDatum
       ownValidatorHash = fst $ ownHashes ctx
       tokenPreserved = Value.assetClassValueOf (Validation.valueLockedBy txInfo ownValidatorHash) treasuryAsset > 0
       valueSigned = Validation.valueLockedBy txInfo newScriptHash == newValue
-      valuePreserved = valueSpentBy txInfo originalScriptHash == Validation.valueLockedBy txInfo newScriptHash
+      valuePreserved = valueSpentBy txInfo originalScriptHash == newValue
       outDatumHash' = head $ nub $ map fst $ scriptOutputsAt newScriptHash txInfo
       datumSigned = newDatumHash == outDatumHash'
-   in traceIfFalse "not enough signatures for minting" requiredSignatures
-        && traceIfFalse "token not preserved" tokenPreserved
+   in traceIfFalse "not enough valid signatures" requiredSignatures
+        && traceIfFalse "treasury token not preserved" tokenPreserved
         && traceIfFalse "value in target migration script not signed" valueSigned
         && traceIfFalse "value not migrated" valuePreserved
-        && traceIfFalse "Datum in new script not signed" datumSigned
+        && traceIfFalse "Datum in target migration script not signed" datumSigned
 
 treasuryScriptInstance :: TreasuryConfig -> TypedValidator Treasury
 treasuryScriptInstance treasuryConfig =
