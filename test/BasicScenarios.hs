@@ -10,7 +10,6 @@ module BasicScenarios where
 
 import Control.Lens ((&), (.~))
 import Control.Monad (void)
-import Data.Maybe (Maybe (Just))
 import Endpoints
   ( aTokenValue,
     allSignDatumHash,
@@ -50,7 +49,7 @@ import Plutus.Contract.Test
   )
 import Plutus.Trace.Emulator qualified as Trace
 import Plutus.V1.Ledger.Api (ToData (toBuiltinData))
-import PlutusTx.Prelude (Bool (False, True), Eq ((==)), ($), (<>))
+import PlutusTx.Prelude
 import Test.Tasty (TestTree, testGroup)
 import Prelude (head)
 
@@ -83,30 +82,11 @@ normalTests =
             "Migrate contract without all signatures"
             (assertFailedTransaction (\_ err _ -> case err of ScriptFailure (EvaluationError ["not enough valid signatures", "PT5"] _) -> True; _ -> False))
             migrateCurrentContractNotEnoughSigs,
-          --             && traceIfFalse "token not preserved" tokenPreserved
-          -- && traceIfFalse "value in target migration script not signed" valueSigned
-          -- && traceIfFalse "value not migrated" valuePreserved
-          -- && traceIfFalse "Datum in new script not signed" datumSigned
           checkPredicateOptions
             options
             "Migrate contract token not preserved"
             (assertFailedTransaction (\_ err _ -> case err of ScriptFailure (EvaluationError ["treasury token not preserved", "PT5"] _) -> True; _ -> False))
-            migrateCurrentContractTokenNotPreserved {- ,
-                                                    checkPredicateOptions
-                                                      options
-                                                      "Migrate contract incorrect value"
-                                                      (assertFailedTransaction (\_ err _ -> case err of ScriptFailure (EvaluationError ["value not migrated", "PT5"] _) -> True; _ -> False))
-                                                      migrateCurrentContractIncorrectValue,
-                                                    checkPredicateOptions
-                                                      options
-                                                      "Migrate contract value not signed"
-                                                      (assertFailedTransaction (\_ err _ -> case err of ScriptFailure (EvaluationError ["value in target migration script not signed", "PT5"] _) -> True; _ -> False))
-                                                      migrateCurrentContractValueNotSigned,
-                                                    checkPredicateOptions
-                                                      options
-                                                      "Migrate contract value not signed"
-                                                      (assertFailedTransaction (\_ err _ -> case err of ScriptFailure (EvaluationError ["Datum in target migration script not signed", "PT5"] _) -> True; _ -> False))
-                                                      migrateCurrentContractDatumNotSigned -}
+            migrateCurrentContractTokenNotPreserved          
         ]
 
 collectPrize :: Trace.EmulatorTrace ()
@@ -160,10 +140,10 @@ migrateCurrentContractNotEnoughSigs = do
       currentScriptHash = upgradeMathScriptHash upgradeConfig
       newScriptHash' = gameScriptHash
       newDatumHash = datumHash $ Datum $ toBuiltinData newDatum'
-      oneSig = head privKeys
+      oneSig = Prelude.head privKeys
       newMigrationDatum = Just $ MigrationDatum currentScriptHash newScriptHash' newValue' newDatumHash
       migrationData = MigrateContractParams newDatum' newValue' [signDatumHash newMigrationDatum oneSig]
-  Trace.callEndpoint @"migrate no sigs" h1e migrationData
+  Trace.callEndpoint @"migrate no sig check" h1e migrationData
 
 migrateCurrentContractTokenNotPreserved :: Trace.EmulatorTrace ()
 migrateCurrentContractTokenNotPreserved = do
@@ -197,3 +177,35 @@ migrateCurrentContractIncorrectValue = do
       newMigrationDatum = Just $ MigrationDatum currentScriptHash newScriptHash' newValue' newDatumHash
       migrationData = MigrateContractParams newDatum' newValue' $ allSignDatumHash newMigrationDatum
   Trace.callEndpoint @"migrate diff value" h1e migrationData
+
+migrateCurrentContractValueNotSigned :: Trace.EmulatorTrace ()
+migrateCurrentContractValueNotSigned = do
+  h1 <- Trace.activateContractWallet w1 contract
+  h1e <- Trace.activateContractWallet w1 contractMalicious
+  void $ Trace.waitNSlots 1
+  Trace.callEndpoint @"lock funds" h1 $ LockValueParams 16 $ Ada.lovelaceValueOf 888_888_888 <> aTokenValue
+  void $ Trace.waitNSlots 1
+  let newValue' = Ada.lovelaceValueOf 111_111_111
+      newDatum' = hashString "secret"
+      currentScriptHash = upgradeMathScriptHash upgradeConfig
+      newScriptHash' = gameScriptHash
+      newDatumHash = datumHash $ Datum $ toBuiltinData newDatum'
+      newMigrationDatum = Just $ MigrationDatum currentScriptHash newScriptHash' newValue' newDatumHash
+      migrationData = MigrateContractParams newDatum' mempty $ allSignDatumHash newMigrationDatum
+  Trace.callEndpoint @"migrate no sig check" h1e migrationData
+
+migrateCurrentContractDatumNotSigned :: Trace.EmulatorTrace ()
+migrateCurrentContractDatumNotSigned = do
+  h1 <- Trace.activateContractWallet w1 contract
+  h1e <- Trace.activateContractWallet w1 contractMalicious
+  void $ Trace.waitNSlots 1
+  Trace.callEndpoint @"lock funds" h1 $ LockValueParams 16 $ Ada.lovelaceValueOf 888_888_888 <> aTokenValue
+  void $ Trace.waitNSlots 1
+  let newValue' = Ada.lovelaceValueOf 111_111_111
+      newDatum' = hashString "secret"
+      currentScriptHash = upgradeMathScriptHash upgradeConfig
+      newScriptHash' = gameScriptHash
+      newDatumHash = datumHash $ Datum $ toBuiltinData newDatum'
+      newMigrationDatum = Just $ MigrationDatum currentScriptHash newScriptHash' newValue' newDatumHash
+      migrationData = MigrateContractParams (hashString "secret") newValue' $ allSignDatumHash newMigrationDatum
+  Trace.callEndpoint @"migrate no sig check" h1e migrationData

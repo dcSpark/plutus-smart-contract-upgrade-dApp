@@ -100,7 +100,7 @@ maliciousMigrateDifferentValue treasuryCfg upgradeCfg (MigrateContractParams new
   void $ mkMultiValidatorTx [treasurySpend, migrationSpend] >>= submitTxConfirmed . adjustUnbalancedTx
 
 type MigrateMaliciousSchema =
-  Endpoint "migrate no sigs" MigrateContractParams
+  Endpoint "migrate no sig check" MigrateContractParams
     .\/ Endpoint "migrate no token" MigrateContractParams
     .\/ Endpoint "migrate diff value" MigrateContractParams
 
@@ -109,6 +109,6 @@ endpoints (treasuryCfg, ugpradeCfg) =
   forever $
     handleError logError $ awaitPromise $ maliciousMigrateNoSigs' `select` maliciousMigrateNoToken' `select` maliciousMigrateDifferentValue'
   where
-    maliciousMigrateNoSigs' = endpoint @"migrate no sigs" $ maliciousMigrateNoSigs treasuryCfg ugpradeCfg
+    maliciousMigrateNoSigs' = endpoint @"migrate no sig check" $ maliciousMigrateNoSigs treasuryCfg ugpradeCfg
     maliciousMigrateNoToken' = endpoint @"migrate no token" $ maliciousMigrateNoToken treasuryCfg ugpradeCfg
     maliciousMigrateDifferentValue' = endpoint @"migrate diff value" $ maliciousMigrateDifferentValue treasuryCfg ugpradeCfg
