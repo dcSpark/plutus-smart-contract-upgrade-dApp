@@ -1,10 +1,7 @@
-# plutus-smart-contract-upgrade-dApp
-Smart contract with controlled upgrade
-
 <h1 align="center">
-  Plutus voting dApp
+  Plutus Upgrade Smart Contract
 </h1>
-<p align="center">Basic quorum treasury control dApp.</p>
+<p align="center">A smart contract example which allows upgrading the smart contract of a dApp UTXO via gathering signatures.</p>
 
 <p align="center"><img src="https://img.shields.io/badge/license-mit-blue?style=for-the-badge&logo=none" alt="license" /></p>
 
@@ -14,8 +11,7 @@ The code on this repository has **not** been audited. We don't recommend it usin
 
 ## Protocol
 
-This contract allows to pay the content of a treasury to the an address that gets enough votes.
-A special designated token represents the vote. Depening on the intial voting token distribution, allows different voting power per wallet.
+This contract enables updating the treasury UTXO to a new smart contract if enough signatures are collected.
 
 Protocol steps:
 
